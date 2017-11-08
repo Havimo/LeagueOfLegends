@@ -27,6 +27,7 @@ GetJsonFiles <- function(){
   }
   summoner.dt <- as.data.table(summoner.dt)
   setnames(summoner.dt,c('Name','id'))
+  summoner.dt[,id:=as.integer(id)]
   
   champion.json <- fromJSON(file='http://ddragon.leagueoflegends.com/cdn/6.24.1/data/en_US/champion.json')
   champion.dt <- c()
@@ -35,14 +36,16 @@ GetJsonFiles <- function(){
   }
   champion.dt <- as.data.table(champion.dt)
   setnames(champion.dt,c('Name','id'))
+  champion.dt[,id:=as.integer(id)]
   
   item.json <- fromJSON(file='http://ddragon.leagueoflegends.com/cdn/6.24.1/data/en_US/item.json')
   item.dt <- c()
   for(obj in names(item.json$data)){
-    item.dt <- rbind(item.dt,c(item.json$data[[obj]]$name,as.numeric(obj)))
+    item.dt <- rbind(item.dt,c(item.json$data[[obj]]$name,obj))
   }
   item.dt <- as.data.table(item.dt)
   setnames(item.dt,c('Name','id'))
+  item.dt[,id:=as.integer(id)]
   
   return(list('item' = item.dt,'summoner' = summoner.dt, 'champions' = champion.dt))
 }
@@ -68,11 +71,28 @@ FormatPlayerData <- function(players.dt){
   #removing the 3v3 games and the weird 3 games with only 8 and 9players(i.e. the 3 participants missing above)
   players.dt <- players.dt[queueid %in% c(420,440)]
   players.dt <- players.dt[!(matchid %in% players.dt[,.N,.(matchid)][N<10]$matchid)]
-  
   #diagnostic to check I did it right :) 
   # testing <- merge(teamstats.dt[,.(matchid,teamid,firstblood)],players.dt[,sum(firstblood),.(matchid,teamid)],by=c("matchid","teamid"))
   # players.dt[matchid %in% testing[firstblood!=V1]$matchid, .N,.(matchid)]
   # players.dt[, .N,.(matchid)][,.N,N]
+  
+  #adding the item, spell and champion name dimension from the JSON lists :
+  #note : optional, as it doesn't add anything to the modeling, only to the 
+  #interpretation
+  players.dt <- merge(players.dt,id.mapping.list$champions,by.x='championid',by.y='id')
+  
+  # players.dt[,ss1 := id.mapping.list$summoner[id==ss1]$Name,.(id)]
+  # players.dt[,ss2 := id.mapping.list$summoner[id==ss2]$Name,.(id)]
+  # players.dt[,item1 := id.mapping.list$item[id==item1]$Name,.(id)]
+  # players.dt[,item2 := id.mapping.list$item[id==item2]$Name,.(id)]
+  # players.dt[,item3 := id.mapping.list$item[id==item3]$Name,.(id)]
+  # players.dt[,item4 := id.mapping.list$item[id==item4]$Name,.(id)]
+  # players.dt[,item5 := id.mapping.list$item[id==item5]$Name,.(id)]
+  # players.dt[,item6 := id.mapping.list$item[id==item6]$Name,.(id)]
+  # players.dt[,trinket := id.mapping.list$item[id==trinket]$Name,.(id)]
+  
+  
+  
   
   return(players.dt)
 }
@@ -136,11 +156,12 @@ CreateTeamData <- function(players.dt){
 
 #### Execution ####
 # 
+id.mapping.list <- GetJsonFiles()
 ReadData()
 players.dt <- FormatPlayerData(players.dt)
 teams.dt <- CreateTeamData(players.dt)
-id.mapping.list <- GetJsonFiles()
+
 
 #model.team <- CompleteTeamModel(teams.dt)
 #model.player <- CompletePlayerModel(players.dt,T)
-k.fold.results <- CompleteTeamModel_kCV(teams.dt)
+#k.fold.results <- CompleteTeamModel_kCV(teams.dt)

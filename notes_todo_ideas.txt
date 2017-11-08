@@ -1,5 +1,5 @@
 Notes & recent discovery : 
-¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
 1 - it turns out that teamid 100 is the first 5 players and teamid 200 is the last 5 EXCEPT for 3v3 games. I think we should remove them from our analysis, which is what I will do from now on, i.e. I will only keep the queue id 420 & 440
 
 2 - Two ways of going about the project, predict the probability of winning the game for a specific players, or predict the probability for a specific teams. I don't know which is the most interesting yet.
@@ -12,7 +12,7 @@ I have created a quick and dirty function to deparse the json for the items and 
 
 
 Some ideas / todos :
-¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
 
 1 - test whether or not jungle forgetting to take Smite has a big impact on the win rate 
 
