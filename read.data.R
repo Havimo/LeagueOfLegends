@@ -13,6 +13,8 @@ library(ggplot2)
 library(scales)
 library(leaps)
 library(rjson)
+library(glmnet)
+library(MASS)
 source('plot.functions.R')
 source('models.R')
 source('relativeDataset.R')
@@ -158,11 +160,6 @@ id.mapping.list <- GetJsonFiles()
 sum(is.na(players.dt))
 sum(is.na(teams.dt))
 
-# NORMALIZE THE DATA 
-#PCA 
-pca <- princomp(teams.dt)
-
-
 
 ################# Create train/test set for team.dt #############
 set.seed(0)
@@ -187,7 +184,7 @@ test.teams.dt <- rest[selection]
 # Define which observations will be used for our validation set 
 validate.teams.dt <- rest[!selection]
 
-################### Create train/test set for team.dt ###########
+################### Create train/test set for rel.team.dt ###########
 
 # Construct rel.team.dt
 rel.teams.dt <- relativeDataset(teams.dt)
@@ -207,62 +204,6 @@ test.rel.teams.dt <- rest[selection]
 
 # Define which observations will be used for our validation set 
 validate.rel.teams.dt <- rest[!selection]
-
-#################### EXPLORE THE DATA ###########################
-# blue = win 
-# red = loose
-
-############### TEAMS.DT
-
-plot(train.teams.dt$kills, train.teams.dt$goldearned, xlab = "kills", ylab="gold earned", col=c("red", "blue")[train.teams.dt$win +1])
-# they look correlated
-# no advances for 
-
-plot(train.teams.dt$maxchamplvl, train.teams.dt$kills, xlab="maxchamplvl", ylab="kills", col=c("red", "blue")[train.teams.dt$win +1])
-# champion lvl influences the number of kills
-
-plot(train.teams.dt$maxchamplvl, train.teams.dt$goldearned, xlab="maxchamplvl", ylab="goldearned", col=c("red", "blue")[train.teams.dt$win +1])
-# really high lvl champions earn a lot of gold
-
-plot(train.teams.dt$minchamplvl, train.teams.dt$totdmgdealt, xlab="avgchamplvl", ylab="tot domage dealt", col=c("red", "blue")[train.teams.dt$win +1])
-
-############### REL.TEAMS.DT
-
-plot(train.rel.teams.dt$kills, train.rel.teams.dt$goldearned, xlab = "kills", ylab="gold earned", col=c("red", "blue")[train.rel.teams.dt$win +1])
-
-plot(train.rel.teams.dt$maxchamplvl, train.rel.teams.dt$kills, xlab="maxchamplvl", ylab="kills", col=c("red", "blue")[train.rel.teams.dt$win +1])
-
-plot(train.rel.teams.dt$maxchamplvl, train.rel.teams.dt$goldearned, xlab="maxchamplvl", ylab="goldearned", col=c("red", "blue")[train.rel.teams.dt$win +1])
-
-plot(train.rel.teams.dt$minchamplvl, train.rel.teams.dt$totdmgdealt, xlab="avgchamplvl", ylab="tot domage dealt", col=c("red", "blue")[train.rel.teams.dt$win +1])
-
-######################### LASSO #################################
-#formulation of the LASSO problem for train set
-X = model.matrix(win~., train.teams.dt)[, -1]
-y = train.teams.dt$win
-#define the sequence of lambdas
-lamb = 10^seq(-4, 20, length=50) 
-
-#solving LASSO for train set
-lassofit = glmnet(X, y, alpha = 1, lambda = lamb) 
-#extract coefficients
-coeflassofit = coef(lassofit) #our model
-coef(lassofit, s = 0.01) #nah, fix ce truc
-#display LASSO path
-plot.glmnet(lassofit, label= TRUE)
-
-#computing test error
-Xhat = model.matrix(win~., test.teams.dt)
-yhat = test.teams.dt$win
-errlassotrain = 1/dim(Xhat)[1]*colSums((Xhat%*%coeflassotrain - yhat)^2);
-indx = which.min(errlassotrain)
-#extracts the lambda for which the test error is the smallest
-lamb[indx] # bizarre ... genre vraiment
-
-
-######################### BEST SUBSET ###########################
-reg.teams <- regsubsets(win~. , train.teams.dt, nvmax = 58, method = "backward", really.big = TRUE)
-plot(reg.teams)
 
 ####################### OTHER COMPUTINGS ########################
 model.team <- CompleteTeamModel(teams.dt)
