@@ -12,3 +12,7 @@ Some ideas / todos :
 2 - improve the models with calculated variables, such as dividing by duration where it makes sense. Create categorical where appropriate
 
 3 - run subset & feature selection
+
+4 - decide on which variables we want to do explaining 
+
+5- uniformize the datasets which we are using (normalized, duration normalized etc. )
