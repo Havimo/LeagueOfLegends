@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #loading packages and sourcing external files
 
 #install.packages("data.table")
@@ -7,14 +8,16 @@
 #install.packages("rjson")
 
 #setwd('~/SLProject')
+
 library(data.table)
 library(ggplot2)
 library(scales)
 library(leaps)
 library(rjson)
 library(glmnet)
-source('plot.functions.R')
-source('models.R')
+library(MASS)
+set.seed(0)
+
 
 #<<- assign to global environnement
 ReadData <- function(){
@@ -181,6 +184,56 @@ CreateTeamData <- function(players.dt,NormalizeDuration=F){
 }
 
 
+################# Create train/test set for team.dt #############
+
+DivideTeamsData <- function(teams.dt){
+  # Which ratio of the data used for training, testing, validating
+  train.ratio <- 0.5
+  test.ratio <- 0.4
+  # Deduce the number of samples needed in our training set
+  nb.train <- floor(train.ratio*dim(teams.dt)[1])
+  # Define which observations will be used for our training set
+  selection <- sample(c(rep(TRUE, times=nb.train), rep(FALSE, times=dim(teams.dt)[1]-nb.train)), dim(teams.dt)[1])
+  train.teams.dt <<- teams.dt[selection]
+  rest <- teams.dt[!selection]
+  
+  # Deduce the number of samples needed in our testing set
+  nb.test <- floor(test.ratio*dim(teams.dt)[1])
+  # Define which observations will be used for our training set
+  selection <- sample(c(rep(TRUE, times=nb.test), rep(FALSE, times=dim(rest)[1]-nb.test)), dim(rest)[1])
+  test.teams.dt <<- rest[selection]
+  
+  # Define which observations will be used for our validation set 
+  validate.teams.dt <<- rest[!selection]
+}
+
+################### Create train/test set for rel.team.dt ###########
+
+# Construct rel.team.dt
+DivideRelTeamsData <- function(teams.dt){
+  train.ratio <- 0.5
+  test.ratio <- 0.4
+  
+  rel.teams.dt <- relativeDataset(teams.dt)
+  
+  # Deduce the number of samples needed in our training set
+  nb.train.rel <- floor(train.ratio*dim(rel.teams.dt)[1])
+  # Define which observations will be used for our training set
+  selection <- sample(c(rep(TRUE, times=nb.train.rel), rep(FALSE, times=dim(rel.teams.dt)[1]-nb.train.rel)), dim(rel.teams.dt)[1])
+  train.rel.teams.dt <<- rel.teams.dt[selection]
+  rest <- rel.teams.dt[!selection]
+  
+  # Deduce the number of samples needed in our testing set
+  nb.test.rel <- floor(test.ratio*dim(rel.teams.dt)[1])
+  # Define which observations will be used for our training set
+  selection <- sample(c(rep(TRUE, times=nb.test.rel), rep(FALSE, times=dim(rest)[1]-nb.test.rel)), dim(rest)[1])
+  test.rel.teams.dt <<- rest[selection]
+  
+  # Define which observations will be used for our validation set 
+  validate.rel.teams.dt <<- rest[!selection]
+}
+
+
 #### Execution ####
 
 id.mapping.list <- GetJsonFiles()
@@ -190,11 +243,14 @@ ReadData()
 players.dt <- FormatPlayerData(players.dt)
 teams.dt <- CreateTeamData(players.dt)
 teams.normalized.dt <- CreateTeamData(players.dt,T)
-NormalizedVariableBoxPlot(teams.dt,teams.normalized.dt)
 
 
 ####################### OTHER COMPUTINGS ########################
 # model.team <- CompleteTeamModel(teams.dt)
 # model.player <- CompletePlayerModel(players.dt,T)
 #k.fold.results <- CompleteTeamModel_kCV(teams.normalized.dt)
-k.fold.results <- CompleteTeamModel_kCV(teams.normalized.dt[,.(win,firstinhib,deaths,towerkills,minchamplvl,goldearned)])
+#k.fold.results <- CompleteTeamModel_kCV(teams.normalized.dt[,.(win,firstinhib,deaths,towerkills,minchamplvl,goldearned)])
+
+
+
+
