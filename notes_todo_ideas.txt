@@ -15,4 +15,7 @@ Some ideas / todos :
 
 4 - decide on which variables we want to do explaining 
 
-5- uniformize the datasets which we are using (normalized, duration normalized etc. )
+5 - uniformize the datasets which we are using (normalized, duration normalized etc. )
+
+6 - Find third variable explaining the plot of Adrien
+
