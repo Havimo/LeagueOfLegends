@@ -1,12 +1,22 @@
 #loading packages and sourcing external files
+
+#install.packages("data.table")
+#install.packages("ggplot2")
+#install.packages("scales")
+#install.packages("leaps")
+#install.packages("rjson")
+
+#setwd('~/SLProject')
 library(data.table)
 library(ggplot2)
 library(scales)
 library(leaps)
 library(rjson)
+library(glmnet)
 source('plot.functions.R')
 source('models.R')
 
+#<<- assign to global environnement
 ReadData <- function(){
   match.dt <<- fread('matches.csv')
   #merging the two datasets removes 3 players from the 'participants' that do not appear in 'stats'. 
@@ -52,9 +62,11 @@ GetJsonFiles <- function(){
 
 FormatPlayerData <- function(players.dt){
   #removing buggy columns
-  players.dt[,wardsbought := NULL]#some erros in its fields
-  players.dt[,timecc := NULL]#always0
-  players.dt[,neutralminionskilled:=NULL] #this is ownjungle + enemyjungle, so having all 3 results in a non full rank matrix.
+  #players.dt[,wardsbought := NULL]#some errors in its fields
+  #players.dt[,timecc := NULL]#always0
+  #players.dt[,neutralminionskilled:=NULL] #this is ownjungle + enemyjungle, so having all 3 results in a non full rank matrix.
+  del <- c("wardsbought", "timecc", "neutralminionskilled")
+  players.dt[, !(names(players.dt) %in% del)]
   
   #fixing one row with missing data:
   id.bugged <- na.omit(players.dt,invert=T)$id
@@ -97,7 +109,7 @@ FormatPlayerData <- function(players.dt){
   return(players.dt)
 }
 
-CreateTeamData <- function(players.dt){
+CreateTeamData <- function(players.dt,NormalizeDuration=F){
   #create the "team" dataset, i.e. we aggregate the players metric to a team level, by summing, averaging or taking the min max.
   team.dt <- players.dt[,list(
       kills = sum(kills,na.rm=T),
@@ -150,18 +162,39 @@ CreateTeamData <- function(players.dt){
   #get team specific metric from teamstats
   team.dt <- merge(teamstats.dt,team.dt,by=c('matchid','teamid'))
   
+  #removing the columns that are linearly dependent
+  team.dt[,totdmgtaken:=NULL]
+  team.dt[,totdmgtochamp:=NULL]
+  team.dt[,totdmgdealt:=NULL]
+  team.dt[,firstharry:=NULL]
+  
+  if(NormalizeDuration){
+    #compute normalization (could use apply here for speed but w/e)
+    for(sd in setdiff(colnames(team.dt),c("firstblood","firsttower","firstinhib","firstbaron","firstdragon",
+                                           "firstharry","duration","win",'matchid','teamid'))){
+      team.dt <- team.dt[,as.character(sd):=get(sd)/duration]
+    }
+    team.dt <- team.dt[,!"duration"]
+  }
+  
   return(team.dt)
 }
 
 
 #### Execution ####
-# 
+
 id.mapping.list <- GetJsonFiles()
+
+# Data
 ReadData()
 players.dt <- FormatPlayerData(players.dt)
 teams.dt <- CreateTeamData(players.dt)
+teams.normalized.dt <- CreateTeamData(players.dt,T)
+NormalizedVariableBoxPlot(teams.dt,teams.normalized.dt)
 
 
-#model.team <- CompleteTeamModel(teams.dt)
-#model.player <- CompletePlayerModel(players.dt,T)
-#k.fold.results <- CompleteTeamModel_kCV(teams.dt)
+####################### OTHER COMPUTINGS ########################
+# model.team <- CompleteTeamModel(teams.dt)
+# model.player <- CompletePlayerModel(players.dt,T)
+#k.fold.results <- CompleteTeamModel_kCV(teams.normalized.dt)
+k.fold.results <- CompleteTeamModel_kCV(teams.normalized.dt[,.(win,firstinhib,deaths,towerkills,minchamplvl,goldearned)])
