@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 #loading packages and sourcing external files
 
 #install.packages("data.table")
@@ -112,7 +111,7 @@ FormatPlayerData <- function(players.dt){
   return(players.dt)
 }
 
-CreateTeamData <- function(players.dt,NormalizeDuration=F){
+CreateTeamData <- function(players.dt,NormalizeDuration=F,FilterUseless=F,FilterDamage=F){
   #create the "team" dataset, i.e. we aggregate the players metric to a team level, by summing, averaging or taking the min max.
   team.dt <- players.dt[,list(
       kills = sum(kills,na.rm=T),
@@ -180,6 +179,27 @@ CreateTeamData <- function(players.dt,NormalizeDuration=F){
     team.dt <- team.dt[,!"duration"]
   }
   
+  #add new variables & interactions
+  #team.dt[,dmgratio := (physdmgtochamp+truedmgtochamp+magicdmgtochamp)/(magicdmgtaken+physdmgtaken+truedmgtaken)]
+  team.dt[,totaldmgtaken := magicdmgtaken+physdmgtaken+truedmgtaken]
+  team.dt[,totaldmgdealttochamp := physdmgtochamp+truedmgtochamp+magicdmgtochamp]
+  team.dt[,totaldmgdealt := magicdmgdealt+physicaldmgdealt+truedmgdealt]
+  
+  team.dt[,junglepressure := enemyjunglekills/(ownjunglekills+enemyjunglekills)] #better than enemy/own as it is a much more normalized variable around 0.4
+  team.dt[ownjunglekills+enemyjunglekills==0,junglepressure := 0] #better than enemy/own as it is a much more normalized variable around 0.4
+ 
+   team.dt[,teamassists := assists/kills] #better than enemy/own as it is a much more normalized variable around 0.4
+  team.dt[kills==0,teamassists := 0] 
+  
+  if(FilterUseless){
+    team.dt <- team.dt[,!c('largestkillingspree','largestmultikill','killingsprees','longesttimespentliving','doublekills',
+                           'triplekills','quadrakills','pentakills','legendarykills','largestcrit','totheal','dmgtoobj','totcctimedealt')]
+
+  }
+  if(FilterDamage){
+    team.dt <- team.dt[,!c( 'magicdmgdealt','physicaldmgdealt','truedmgdealt','magicdmgtochamp', 
+                            'physdmgtochamp','truedmgtochamp','magicdmgtaken','physdmgtaken','truedmgtaken')]
+  }
   return(team.dt)
 }
 
@@ -234,7 +254,7 @@ DivideRelTeamsData <- function(teams.dt){
 }
 
 
-#### Execution ####
+#### EXECUTION ####
 
 id.mapping.list <- GetJsonFiles()
 
@@ -243,7 +263,7 @@ ReadData()
 players.dt <- FormatPlayerData(players.dt)
 teams.dt <- CreateTeamData(players.dt)
 teams.normalized.dt <- CreateTeamData(players.dt,T)
-
+teams.new.dt <- CreateTeamData(players.dt,T,T,T)
 
 ####################### OTHER COMPUTINGS ########################
 # model.team <- CompleteTeamModel(teams.dt)

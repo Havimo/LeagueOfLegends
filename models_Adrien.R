@@ -44,16 +44,9 @@ CompleteTeamModel <- function(teams.dt,NormalizeDuration=F){
   
 }
 
-CompleteTeamModel_kCV <- function(teams.dt,NormalizeDuration=F,k=10){
+CompleteTeamModel_kCV <- function(teams.dt,k=10,formula=as.formula('win ~.')){
   cat('Running Team Model',k,'Fold Cross Validation','\n')
-  if(NormalizeDuration){
-    #compute normalization (could use apply here for speed but w/e)
-    for(sd in setdiff(colnames(teams.dt),c("firstblood","firsttower","firstinhib","firstbaron","firstdragon",
-                                           "firstharry","duration","win"))){
-      teams.dt <- teams.dt[,as.character(sd):=get(sd)/duration]
-    }
-    teams.dt <- teams.dt[,!"duration"]
-  }
+
   
   data.model <- teams.dt[,!c("matchid","teamid")]
   #set up variable to do the CV
@@ -65,7 +58,7 @@ CompleteTeamModel_kCV <- function(teams.dt,NormalizeDuration=F,k=10){
     cat('Running fold',i,'...')
     idx.test <- (size.k.fold*i):(size.k.fold*(i+1))
     idx.train <- setdiff(idx.total,idx.test) 
-    model.k.fold <- glm(data.model[idx.train],formula= win~.,family='binomial')
+    model.k.fold <- glm(data.model[idx.train],formula= formula,family='binomial')
     predict.k.fold <- predict(model.k.fold,data.model[idx.test],type='response')
     validation.k.fold <- rbind(validation.k.fold,cbind(data.model[idx.test]$win,predict.k.fold))
     cat('Done !','\n')
@@ -114,5 +107,5 @@ CompletePlayerModel <- function(players.dt, NormalizeDuration = F){
   cat('Precision :',nrow(validation[PredictedWin==1 & PredictedWin==Actual]) / nrow(validation[Actual==1]))
   
   return(model)
-  
+
 }

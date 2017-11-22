@@ -65,7 +65,7 @@ WinningProbBoxPlot <- function(validation){
   print(plot1)
 }
 
-NormalizedVariableBoxPlot <- function(teams.dt,teams.normalized.dt){
+NormalizedGoldEarnedBoxPlot <- function(teams.dt,teams.normalized.dt){
   n <- nrow(teams.dt)
   dataplot <- as.data.table(rbind(cbind(rep('Total',n),teams.dt$goldearned),cbind(rep('Per second',n),teams.normalized.dt$goldearned)))
   setnames(dataplot,c('GoldEarned','Value'))
@@ -81,6 +81,66 @@ NormalizedVariableBoxPlot <- function(teams.dt,teams.normalized.dt){
   print(plot1)
   
 }
+
+ClusteringPlot <- function(teams.dt,variable.x,variable.y){
+  dataplot <- teams.dt[,.(get(variable.x),get(variable.y),win)]
+  dataplot[win==1,GameOutcome := 'Won']
+  dataplot[win==0,GameOutcome := 'Lost']
+
+  plot1 <- ggplot(dataplot) +
+    geom_point(aes(x=V1,y=V2,color=GameOutcome,shape=GameOutcome))+
+    theme_bw()+
+    labs(title = paste('Game Outcome by',variable.x,'and',variable.y), x = variable.x, y = variable.y)
+  print(plot1)
+}
+
+ClusteringPlotAreas <- function(teams.dt){
+  
+  test.model <- glm(teams.dt[,.(win,deaths,goldearned)],formula= win~deaths+goldearned+I(deaths^2)+I(goldearned^2),family='binomial')
+  fake.data <- as.data.table(expand.grid(seq(min(teams.dt$deaths),max(teams.dt$deaths),(min(teams.dt$deaths)+max(teams.dt$deaths))/100),
+                                   seq(min(teams.dt$goldearned),max(teams.dt$goldearned),(min(teams.dt$goldearned)+max(teams.dt$goldearned))/100)))
+  setnames(fake.data,c('deaths','goldearned'))
+  fake.data <- cbind(fake.data,predict(test.model,fake.data,type='response'))
+  
+  
+  dataplot <- teams.dt[,.(goldearned,deaths,win)]
+  dataplot[win==1,GameOutcome := 'Won']
+  dataplot[win==0,GameOutcome := 'Lost']
+  
+  plot1 <- ggplot(dataplot) +
+    geom_point(aes(x=deaths,y=goldearned,color=GameOutcome,shape=GameOutcome))+
+    geom_tile(data=fake.data,aes(x=deaths,y=goldearned,fill=V2),alpha=0.5)+
+    theme_bw()+
+    labs(title = paste('Game Outcome by goldearned and deaths'))
+  print(plot1)
+}
+
+
+ClusteringPlotLines <- function(teams.dt){
+  
+  test.model <- glm(teams.dt[,.(win,deaths,goldearned)],formula= win~deaths+goldearned+I(deaths^2)+I(goldearned^2),family='binomial')
+  fake.data <- as.data.table(expand.grid(seq(min(teams.dt$deaths),max(teams.dt$deaths),(min(teams.dt$deaths)+max(teams.dt$deaths))/100),
+                                         seq(min(teams.dt$goldearned),max(teams.dt$goldearned),(min(teams.dt$goldearned)+max(teams.dt$goldearned))/100)))
+  setnames(fake.data,c('deaths','goldearned'))
+  fake.data <- cbind(fake.data,predict(test.model,fake.data,type='response'))
+  fake.data[,win := 0+1*(V2>0.5)]
+  fake.data[win==1,GameOutcome := 'Won']
+  fake.data[win==0,GameOutcome := 'Lost']
+  
+  dataplot <- teams.dt[,.(goldearned,deaths,win)]
+  dataplot[win==1,GameOutcome := 'Won']
+  dataplot[win==0,GameOutcome := 'Lost']
+  
+  plot1 <- ggplot(dataplot) +
+    geom_point(aes(x=deaths,y=goldearned,color=GameOutcome,shape=GameOutcome))+
+    geom_tile(data=fake.data,aes(x=deaths,y=goldearned,fill=GameOutcome),alpha=0.3)+
+    theme_bw()+
+    labs(title = paste('Game Outcome by goldearned and deaths'))
+  print(plot1)
+}
+
+
+
 ggregsubsets <- function(x){
   require(dplyr); require(ggplot2); require(tidyr)
   if(inherits(x, "regsubsets")) x <- summary(x)
