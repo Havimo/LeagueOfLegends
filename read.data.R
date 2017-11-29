@@ -7,6 +7,7 @@
 #install.packages("rjson")
 
 #setwd('~/SLProject')
+setwd('C:/Users/Ausra/Documents/SLProject')
 
 library(data.table)
 library(ggplot2)
@@ -15,8 +16,10 @@ library(leaps)
 library(rjson)
 library(glmnet)
 library(MASS)
-set.seed(0)
-
+source('plot.functions.R')
+source('models.R')
+source('relativeDataset.R')
+source('Normalize.R')
 
 #<<- assign to global environnement
 ReadData <- function(){
@@ -39,7 +42,6 @@ GetJsonFiles <- function(){
   }
   summoner.dt <- as.data.table(summoner.dt)
   setnames(summoner.dt,c('Name','id'))
-  summoner.dt[,id:=as.integer(id)]
   
   champion.json <- fromJSON(file='http://ddragon.leagueoflegends.com/cdn/6.24.1/data/en_US/champion.json')
   champion.dt <- c()
@@ -48,16 +50,14 @@ GetJsonFiles <- function(){
   }
   champion.dt <- as.data.table(champion.dt)
   setnames(champion.dt,c('Name','id'))
-  champion.dt[,id:=as.integer(id)]
   
   item.json <- fromJSON(file='http://ddragon.leagueoflegends.com/cdn/6.24.1/data/en_US/item.json')
   item.dt <- c()
   for(obj in names(item.json$data)){
-    item.dt <- rbind(item.dt,c(item.json$data[[obj]]$name,obj))
+    item.dt <- rbind(item.dt,c(item.json$data[[obj]]$name,as.numeric(obj)))
   }
   item.dt <- as.data.table(item.dt)
   setnames(item.dt,c('Name','id'))
-  item.dt[,id:=as.integer(id)]
   
   return(list('item' = item.dt,'summoner' = summoner.dt, 'champions' = champion.dt))
 }
@@ -85,33 +85,32 @@ FormatPlayerData <- function(players.dt){
   #removing the 3v3 games and the weird 3 games with only 8 and 9players(i.e. the 3 participants missing above)
   players.dt <- players.dt[queueid %in% c(420,440)]
   players.dt <- players.dt[!(matchid %in% players.dt[,.N,.(matchid)][N<10]$matchid)]
+  
+  #transforming caracter-variables in numerical
+  # put the roles as numerical values 
+  players.dt[, roleNONE := as.numeric(players.dt$role=="NONE")]
+  players.dt[, roleSOLO := as.numeric(players.dt$role=="SOLO")]
+  players.dt[, roleDUO_CARRY := as.numeric(players.dt$role=="DUO_CARRY")]
+  players.dt[, roleDUO_SUPPORT := as.numeric(players.dt$role=="DUO_SUPPORT")]
+  players.dt[, roleDUO := as.numeric((players.dt$role=="DUO"))]
+  players.dt[, role:= NULL]
+  
+  # put the positions as numerical values 
+  players.dt[, positionBOT := as.numeric(players.dt$position=="BOT")]
+  players.dt[, positionMID := as.numeric(players.dt$position=="MID")]
+  players.dt[, positionTOP := as.numeric(players.dt$position=="TOP")]
+  players.dt[, positionJUNGLE := as.numeric(players.dt$position=="JUNGLE")]
+  players.dt[, position:= NULL]
+  
   #diagnostic to check I did it right :) 
   # testing <- merge(teamstats.dt[,.(matchid,teamid,firstblood)],players.dt[,sum(firstblood),.(matchid,teamid)],by=c("matchid","teamid"))
   # players.dt[matchid %in% testing[firstblood!=V1]$matchid, .N,.(matchid)]
   # players.dt[, .N,.(matchid)][,.N,N]
   
-  #adding the item, spell and champion name dimension from the JSON lists :
-  #note : optional, as it doesn't add anything to the modeling, only to the 
-  #interpretation
-  players.dt <- merge(players.dt,id.mapping.list$champions,by.x='championid',by.y='id')
-  
-  # players.dt[,ss1 := id.mapping.list$summoner[id==ss1]$Name,.(id)]
-  # players.dt[,ss2 := id.mapping.list$summoner[id==ss2]$Name,.(id)]
-  # players.dt[,item1 := id.mapping.list$item[id==item1]$Name,.(id)]
-  # players.dt[,item2 := id.mapping.list$item[id==item2]$Name,.(id)]
-  # players.dt[,item3 := id.mapping.list$item[id==item3]$Name,.(id)]
-  # players.dt[,item4 := id.mapping.list$item[id==item4]$Name,.(id)]
-  # players.dt[,item5 := id.mapping.list$item[id==item5]$Name,.(id)]
-  # players.dt[,item6 := id.mapping.list$item[id==item6]$Name,.(id)]
-  # players.dt[,trinket := id.mapping.list$item[id==trinket]$Name,.(id)]
-  
-  
-  
-  
   return(players.dt)
 }
 
-CreateTeamData <- function(players.dt,NormalizeDuration=F,FilterUseless=F,FilterDamage=F){
+CreateTeamData <- function(players.dt){
   #create the "team" dataset, i.e. we aggregate the players metric to a team level, by summing, averaging or taking the min max.
   team.dt <- players.dt[,list(
       kills = sum(kills,na.rm=T),
@@ -164,113 +163,68 @@ CreateTeamData <- function(players.dt,NormalizeDuration=F,FilterUseless=F,Filter
   #get team specific metric from teamstats
   team.dt <- merge(teamstats.dt,team.dt,by=c('matchid','teamid'))
   
-  #removing the columns that are linearly dependent
-  team.dt[,totdmgtaken:=NULL]
-  team.dt[,totdmgtochamp:=NULL]
-  team.dt[,totdmgdealt:=NULL]
-  team.dt[,firstharry:=NULL]
-  
-  if(NormalizeDuration){
-    #compute normalization (could use apply here for speed but w/e)
-    for(sd in setdiff(colnames(team.dt),c("firstblood","firsttower","firstinhib","firstbaron","firstdragon",
-                                           "firstharry","duration","win",'matchid','teamid'))){
-      team.dt <- team.dt[,as.character(sd):=get(sd)/duration]
-    }
-    team.dt <- team.dt[,!"duration"]
-  }
-  
-  #add new variables & interactions
-  #team.dt[,dmgratio := (physdmgtochamp+truedmgtochamp+magicdmgtochamp)/(magicdmgtaken+physdmgtaken+truedmgtaken)]
-  team.dt[,totaldmgtaken := magicdmgtaken+physdmgtaken+truedmgtaken]
-  team.dt[,totaldmgdealttochamp := physdmgtochamp+truedmgtochamp+magicdmgtochamp]
-  team.dt[,totaldmgdealt := magicdmgdealt+physicaldmgdealt+truedmgdealt]
-  
-  team.dt[,junglepressure := enemyjunglekills/(ownjunglekills+enemyjunglekills)] #better than enemy/own as it is a much more normalized variable around 0.4
-  team.dt[ownjunglekills+enemyjunglekills==0,junglepressure := 0] #better than enemy/own as it is a much more normalized variable around 0.4
- 
-   team.dt[,teamassists := assists/kills] #better than enemy/own as it is a much more normalized variable around 0.4
-  team.dt[kills==0,teamassists := 0] 
-  
-  if(FilterUseless){
-    team.dt <- team.dt[,!c('largestkillingspree','largestmultikill','killingsprees','longesttimespentliving','doublekills',
-                           'triplekills','quadrakills','pentakills','legendarykills','largestcrit','totheal','dmgtoobj','totcctimedealt')]
-
-  }
-  if(FilterDamage){
-    team.dt <- team.dt[,!c( 'magicdmgdealt','physicaldmgdealt','truedmgdealt','magicdmgtochamp', 
-                            'physdmgtochamp','truedmgtochamp','magicdmgtaken','physdmgtaken','truedmgtaken')]
-  }
   return(team.dt)
 }
 
 
-################# Create train/test set for team.dt #############
-
-DivideTeamsData <- function(teams.dt){
-  # Which ratio of the data used for training, testing, validating
-  train.ratio <- 0.5
-  test.ratio <- 0.4
-  # Deduce the number of samples needed in our training set
-  nb.train <- floor(train.ratio*dim(teams.dt)[1])
-  # Define which observations will be used for our training set
-  selection <- sample(c(rep(TRUE, times=nb.train), rep(FALSE, times=dim(teams.dt)[1]-nb.train)), dim(teams.dt)[1])
-  train.teams.dt <<- teams.dt[selection]
-  rest <- teams.dt[!selection]
-  
-  # Deduce the number of samples needed in our testing set
-  nb.test <- floor(test.ratio*dim(teams.dt)[1])
-  # Define which observations will be used for our training set
-  selection <- sample(c(rep(TRUE, times=nb.test), rep(FALSE, times=dim(rest)[1]-nb.test)), dim(rest)[1])
-  test.teams.dt <<- rest[selection]
-  
-  # Define which observations will be used for our validation set 
-  validate.teams.dt <<- rest[!selection]
-}
-
-################### Create train/test set for rel.team.dt ###########
-
-# Construct rel.team.dt
-DivideRelTeamsData <- function(teams.dt){
-  train.ratio <- 0.5
-  test.ratio <- 0.4
-  
-  rel.teams.dt <- relativeDataset(teams.dt)
-  
-  # Deduce the number of samples needed in our training set
-  nb.train.rel <- floor(train.ratio*dim(rel.teams.dt)[1])
-  # Define which observations will be used for our training set
-  selection <- sample(c(rep(TRUE, times=nb.train.rel), rep(FALSE, times=dim(rel.teams.dt)[1]-nb.train.rel)), dim(rel.teams.dt)[1])
-  train.rel.teams.dt <<- rel.teams.dt[selection]
-  rest <- rel.teams.dt[!selection]
-  
-  # Deduce the number of samples needed in our testing set
-  nb.test.rel <- floor(test.ratio*dim(rel.teams.dt)[1])
-  # Define which observations will be used for our training set
-  selection <- sample(c(rep(TRUE, times=nb.test.rel), rep(FALSE, times=dim(rest)[1]-nb.test.rel)), dim(rest)[1])
-  test.rel.teams.dt <<- rest[selection]
-  
-  # Define which observations will be used for our validation set 
-  validate.rel.teams.dt <<- rest[!selection]
-}
-
-
-#### EXECUTION ####
-
-id.mapping.list <- GetJsonFiles()
-
+#### Execution ####
 # Data
 ReadData()
 players.dt <- FormatPlayerData(players.dt)
 teams.dt <- CreateTeamData(players.dt)
-teams.normalized.dt <- CreateTeamData(players.dt,T)
-teams.new.dt <- CreateTeamData(players.dt,T,T,T)
+id.mapping.list <- GetJsonFiles()
+
+# Check for missing values
+sum(is.na(players.dt))
+sum(is.na(teams.dt))
+
+
+################### Create train/test set for team.dt ###########
+set.seed(0)
+# Which ratio of the data used for training, testing, validating
+train.ratio <- 0.5
+test.ratio <- 0.4
+validate.ratio <- 1 - train.ratio - test.ratio
+
+# Deduce the number of samples needed in our training set
+nb.train <- floor(train.ratio*dim(teams.dt)[1])
+# Define which observations will be used for our training set
+selection <- sample(c(rep(TRUE, times=nb.train), rep(FALSE, times=dim(teams.dt)[1]-nb.train)), dim(teams.dt)[1])
+train.teams.dt <- teams.dt[selection]
+rest <- teams.dt[!selection]
+
+# Deduce the number of samples needed in our testing set
+nb.test <- floor(test.ratio*dim(teams.dt)[1])
+# Define which observations will be used for our training set
+selection <- sample(c(rep(TRUE, times=nb.test), rep(FALSE, times=dim(rest)[1]-nb.test)), dim(rest)[1])
+test.teams.dt <- rest[selection]
+
+# Define which observations will be used for our validation set 
+validate.teams.dt <- rest[!selection]
+
+################### Create train/test set for rel.team.dt ###########
+
+# Construct rel.team.dt
+rel.teams.dt <- relativeDataset(teams.dt)
+
+# Deduce the number of samples needed in our training set
+nb.train.rel <- floor(train.ratio*dim(rel.teams.dt)[1])
+# Define which observations will be used for our training set
+selection <- sample(c(rep(TRUE, times=nb.train.rel), rep(FALSE, times=dim(rel.teams.dt)[1]-nb.train.rel)), dim(rel.teams.dt)[1])
+train.rel.teams.dt <- rel.teams.dt[selection]
+rest <- rel.teams.dt[!selection]
+
+# Deduce the number of samples needed in our testing set
+nb.test.rel <- floor(test.ratio*dim(rel.teams.dt)[1])
+# Define which observations will be used for our training set
+selection <- sample(c(rep(TRUE, times=nb.test.rel), rep(FALSE, times=dim(rest)[1]-nb.test.rel)), dim(rest)[1])
+test.rel.teams.dt <- rest[selection]
+
+# Define which observations will be used for our validation set 
+validate.rel.teams.dt <- rest[!selection]
+
 
 ####################### OTHER COMPUTINGS ########################
-# model.team <- CompleteTeamModel(teams.dt)
-# model.player <- CompletePlayerModel(players.dt,T)
-#k.fold.results <- CompleteTeamModel_kCV(teams.normalized.dt)
-#k.fold.results <- CompleteTeamModel_kCV(teams.normalized.dt[,.(win,firstinhib,deaths,towerkills,minchamplvl,goldearned)])
-
-
-
-
+model.team <- CompleteTeamModel(teams.dt)
+model.player <- CompletePlayerModel(players.dt,T)
+k.fold.results <- CompleteTeamModel_kCV(teams.dt)
